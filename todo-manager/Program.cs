@@ -14,6 +14,8 @@ namespace entry_manager
 
         static void Main(string[] args)
         {
+            SaveFile.Initialize();
+
             Console.Title = "Entry Manager";
 
             WindowsConsole.WC_AddOutputConsoleMode(WindowsOutputConsoleMode.ENABLE_VIRTUAL_TERMINAL_PROCESSING);
@@ -53,7 +55,7 @@ namespace entry_manager
                 return;
             }
 
-            e = e.Replace("\\\"", "'");
+            e = e.Replace("\\\"", "`");
 
             List<CommandArgument> positionalArguments = new List<CommandArgument>();
             Dictionary<string, CommandArgument> namedArguments = new Dictionary<string, CommandArgument>();
@@ -62,7 +64,7 @@ namespace entry_manager
 
             {
                 //old regex was /=|\/?\w+|"".*?""/ which also captured the / parts of the arguments
-                MatchCollection matchedArgs = Regex.Matches(e, @"=|[A-Za-z0-9_\-]+|"".*?""");
+                MatchCollection matchedArgs = Regex.Matches(e, @"=|[A-Za-z0-9_\-]+|[""'].*?[""']");
 
                 {
                     Match item = matchedArgs[0];
@@ -77,8 +79,6 @@ namespace entry_manager
                 for (int i = 1; i < matchedArgs.Count; i++)
                 {
                     Match item = matchedArgs[i];
-
-                    CommandArgument comp;
 
                     bool initOptionalRule = false;
                     CommandArgumentRule optionalRule = default(CommandArgumentRule);
@@ -98,18 +98,19 @@ namespace entry_manager
 
                         namedArguments.Add(item.Value, new CommandArgument
                         {
-                            ArgName = item.Value.Trim('"'),
-                            Value = matchedArgs[i + 2].Value.Trim('"'),
+                            ArgName = item.Value.Trim('"', '\''),
+                            Value = matchedArgs[i + 2].Value.Trim('"', '\''),
                             Rule = optionalRule,
                         });
                         i += 2;
                     }
                     else if (initOptionalRule)
                     {
+                        string trimmed = item.Value.Trim('"', '\'');
                         namedArguments.Add(item.Value, new CommandArgument
                         {
-                            ArgName = item.Value.Trim('"'),
-                            Value = item.Value.Trim('"'),
+                            ArgName = trimmed,
+                            Value = trimmed,
                             Rule = optionalRule,
                         });
                     }
@@ -124,7 +125,7 @@ namespace entry_manager
                         positionalArguments.Add(new CommandArgument
                         {
                             ArgName = rule.ArgName,
-                            Value = item.Value.Trim('"'),
+                            Value = item.Value.Trim('"', '\''),
                             Rule = rule
                         });
 
@@ -143,6 +144,12 @@ namespace entry_manager
                 sender.Close();
 
             string errorStr = cmd.OnExecuted?.Invoke(sender, positionalArguments, namedArguments);
+
+            if (errorStr == "EXIT_P")
+            {
+                sender.FullClose();
+                return;
+            }
 
             if (!string.IsNullOrEmpty(errorStr))
             {

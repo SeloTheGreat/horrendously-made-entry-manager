@@ -1,6 +1,5 @@
 ﻿using System;
 using System.Collections.Generic;
-using System.Threading;
 using System.Threading.Tasks;
 
 namespace ConsoleRender
@@ -41,6 +40,8 @@ namespace ConsoleRender
 
         const int seperatorLength = 60;
 
+        int previousBufferHeight;
+        int previousWindowHeight;
         int currentInputRow;
 
         public int previousSelection;
@@ -75,9 +76,18 @@ namespace ConsoleRender
             this.ViewingList = viewingList;
             this.IsClosed = false;
 
+            this.previousBufferHeight = Console.BufferHeight;
+            this.previousWindowHeight = Console.WindowHeight;
+
+            {
+                ListViewerSettings.loud = SaveFile.SaveData.TryGetValue("SET_loud", out string res) ? bool.Parse(res) : ListViewerSettings.loud;
+                ListViewerSettings.pageupjmp = SaveFile.SaveData.TryGetValue("SET_page-up-jmp", out res) ? uint.Parse(res) : ListViewerSettings.pageupjmp;
+                ListViewerSettings.pagedownjmp = SaveFile.SaveData.TryGetValue("SET_page-down-jmp", out res) ? uint.Parse(res) : ListViewerSettings.pagedownjmp;
+            }
+
             Console.CancelKeyPress += (object sender, ConsoleCancelEventArgs e) =>
             {
-                this.Close();
+                this.FullClose();
                 Console.WriteLine("PROCESS ENDED, PRESS ANY BUTTONS TO KILL THIS PROCESS...");
                 e.Cancel = true;
             };
@@ -113,7 +123,7 @@ namespace ConsoleRender
             bool isEmpty = ViewingList.Count == 0;
 
             string seperator = new string(RenderGlyphs.HorizontalPipe, seperatorLength - 1);
-            
+
             Console.WriteLine(RenderGlyphs.TopLeft + seperator);
             Console.WriteLine(RenderGlyphs.VerticalPipe + " Selected > " + (isEmpty ? "..." : ViewingList[currentSelection]));
             Console.WriteLine(RenderGlyphs.ForkLeft + seperator);
@@ -223,6 +233,7 @@ namespace ConsoleRender
             }
             else if (info.Key == ConsoleKey.Insert)
             {
+
                 if (ListViewerSettings.loud)
                     Task.Run(BeepHigh);
 
@@ -236,8 +247,20 @@ namespace ConsoleRender
 
                 OnCommandTriggered?.Invoke(this, result);
 
+                if (IsClosed)
+                    return;
                 WriteAtClear($"{RenderGlyphs.VerticalPipe} {defaultCmdString}", CommandInputRow);
                 Console.CursorVisible = false;
+                flag_doBeep = false;
+            }
+            else if (info.Key == ConsoleKey.C)
+            {
+                OnCommandTriggered?.Invoke(this, $"clone {currentSelection}");
+                flag_doBeep = false;
+            }
+            else if (info.Key == ConsoleKey.D)
+            {
+                OnCommandTriggered?.Invoke(this, $"rem {currentSelection}");
                 flag_doBeep = false;
             }
             else
@@ -272,7 +295,7 @@ namespace ConsoleRender
                     currentInfo = Console.ReadKey(true);
                 }
             }
-            
+
             if (ListViewerSettings.loud && flag_doBeep)
                 Task.Run(BeepLow);
         }
@@ -282,8 +305,13 @@ namespace ConsoleRender
             IsClosed = false;
 
             Console.Clear();
-            Console.WindowHeight = ViewingList.Count + 9;
-            Console.BufferHeight = Console.WindowHeight;
+
+            int bufferHeight = ViewingList.Count + 9;
+            Console.WindowHeight = Math.Min(bufferHeight, Console.LargestWindowHeight); //TODO, DO VISUAL SCROLLING FOR RENDER
+            Console.BufferHeight = bufferHeight;
+
+            currentSelection = Math.Min(Math.Max(currentSelection, 0), ViewingList.Count - 1);
+            previousSelection = Math.Min(Math.Max(previousSelection, 0), ViewingList.Count - 1);
 
             this.MainRender();
             while (!IsClosed)
@@ -299,6 +327,20 @@ namespace ConsoleRender
             IsClosed = true;
             Console.Clear();
             Console.CursorVisible = true;
+        }
+
+        public void SetPreviousData()
+        {
+            Console.CursorVisible = true;
+            Console.WindowHeight = previousWindowHeight;
+            Console.BufferHeight = previousBufferHeight;
+        }
+
+        public void FullClose()
+        {
+            Close();
+            SetPreviousData();
+            SaveFile.FullSave();
         }
     }
 }
